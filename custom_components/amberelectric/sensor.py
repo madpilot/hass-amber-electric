@@ -45,6 +45,8 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
         """Return the icon of the sensor."""
         if self._channel_type == ChannelType.FEED_IN:
             return "mdi:solar-power"
+        if self._channel_type == ChannelType.CONTROLLED_LOAD:
+            return "mdi:clock-outline"
         return "mdi:transmission-tower"
 
     @property
@@ -127,9 +129,10 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def icon(self):
-        """Return the icon of the sensor."""
         if self._channel_type == ChannelType.FEED_IN:
             return "mdi:solar-power"
+        if self._channel_type == ChannelType.CONTROLLED_LOAD:
+            return "mdi:clock-outline"
         return "mdi:transmission-tower"
 
     @property
@@ -191,8 +194,21 @@ class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
         return False
 
     @property
+    def icon(self):
+        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
+        if channel is not None:
+            if channel.spike_status == SpikeStatus.SPIKE:
+                return "mdi:power-plug-off"
+            if channel.spike_status == SpikeStatus.POTENTIAL:
+                return "mdi:power-plug-outline"
+        return "mdi:power-plug"
+
+    @property
     def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
         data = {}
+        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
+        if channel is not None:
+            data['spike_status'] = channel.spike_status.value
         data[ATTR_ATTRIBUTION] = ATTRIBUTION
         return data
 
