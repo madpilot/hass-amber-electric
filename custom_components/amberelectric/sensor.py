@@ -1,167 +1,184 @@
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import ATTR_ATTRIBUTION, CONF_NAME
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
-from homeassistant.util import Throttle
-import homeassistant.util.dt as dt_util
-import voluptuous as vol
-import datetime
-from .ambermodel import AmberData, PeriodType, PeriodSource
-import requests
-import json
-from datetime import timedelta
-import base64
-import logging
+# import amberelectric
+from typing import Any, List, Mapping, Union
+from amberelectric.model.channel import ChannelType
+
+from amberelectric.model.interval import SpikeStatus
+import amberelectric
+from amberelectric.api import amber_api
+from amberelectric.model.current_interval import CurrentInterval
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .coordinator import AmberDataService
+
+from .const import CONF_API_TOKEN, CONF_SITE_ID
+from homeassistant.const import ATTR_ATTRIBUTION
 
 
-SCAN_INTERVAL = timedelta(minutes=5)
-URL = "https://api.amberelectric.com.au/prices/listprices"
-UNIT_NAME = "c/kWh"
-CONF_POSTCODE = "postcode"
-CONF_NETWORK_NAME = "network_name"
-
-ATTRIBUTION = "Data provided by the Amber Electric pricing API"
-ATTR_LAST_UPDATE = "last_update"
-ATTR_SENSOR_ID = "sensor_id"
-ATTR_POSTCODE = "postcode"
-ATTR_GRID_NAME = "grid_name"
-ATTR_PRICE_FORCECAST = "price_forcecast"
-CONST_SOLARFIT = "amberSolarFIT"
-CONST_GENRALUSE = "amberGeneralUsage"
-
-_LOGGER = logging.getLogger(__name__)
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_NAME): cv.string,
-        vol.Required(CONF_POSTCODE): cv.string,
-        vol.Optional(CONF_NETWORK_NAME): cv.string
-    }
-)
+def friendly_channel_type(channel_type: str) -> str:
+    if channel_type == ChannelType.GENERAL:
+        return "General"
+    if channel_type == ChannelType.CONTROLLED_LOAD:
+        return "Controlled Load"
+    if channel_type == ChannelType.FEED_IN:
+        return "Feed In"
+    return channel_type
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+class AmberPriceSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
+        super().__init__(data_service.coordinator)
+        self._channel_type = channel_type
+        self._platform_name = platform_name
+        self._data_service = data_service
 
-    postcode = config.get(CONF_POSTCODE)
-    network_name = config.get(CONF_NETWORK_NAME)
-    amber_data = None
-    if(postcode):
-        add_entities(
-            [
-                AmberPricingSensor(amber_data, postcode, network_name, CONST_SOLARFIT,
-                                   "Amber solar feed in tariff", "mdi:solar-power"),
-                AmberPricingSensor(amber_data, postcode, network_name, CONST_GENRALUSE,
-                                   "Amber general usage price", "mdi:transmission-tower")
-            ]
-        )
-
-
-class AmberPricingSensor(Entity):
-    """ Entity object for Amber Electric sensor."""
-
-    def __init__(self, amber_data, postcode, network_name, sensor_type, friendly_name, icon):
-        self.postcode = postcode
-        self.network_name = network_name
-        self.amber_data = amber_data
-        self.price_updated_datetime = None
-        self.network_provider = None
-        self.sensor_type = sensor_type
-        self.friendly_name = friendly_name
-        self.icon_uri = icon
-        self.update()
+    @property
+    def name(self) -> Union[str, None]:
+        return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Price"
 
     @property
     def icon(self):
         """Return the icon of the sensor."""
-        return self.icon_uri
+        if self._channel_type == ChannelType.FEED_IN:
+            return "mdi:solar-power"
+        return "mdi:transmission-tower"
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self.friendly_name
+    def unit_of_measurement(self):
+        return "¢/kWh"
 
     @property
-    def state(self):
-        """Return the state of the sensor."""
-        if self.amber_data is None:
-            return 0
+    def state(self) -> Union[str, None]:
+        channel = self._data_service.current_prices.get(self._channel_type)
+        if channel:
+            if self._channel_type == ChannelType.FEED_IN:
+                return round(channel.per_kwh, 0) * -1
+            return round(channel.per_kwh, 0)
 
-        current_price = list(filter(lambda price: price.period_type == PeriodType.ACTUAL, self.amber_data.data.variable_prices_and_renewables))
-        current_price.sort(key=lambda p: p.period)
-
-        if(self.sensor_type == CONST_GENRALUSE):
-            return self.calc_amber_price(self.amber_data.data.static_prices.e1.totalfixed_kwh_price, self.amber_data.data.static_prices.e1.loss_factor, current_price[len(current_price)-1].wholesale_kwh_price)
-        if(self.sensor_type == CONST_SOLARFIT):
-            # Solar FIT
-            return abs(self.calc_amber_price(self.amber_data.data.static_prices.b1.totalfixed_kwh_price, self.amber_data.data.static_prices.b1.loss_factor, current_price[len(current_price)-1].wholesale_kwh_price))
-
-        return 0
-
-    @ property
-    def device_state_attributes(self):
-
+    @property
+    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
+        meta = self._data_service.current_prices.get(self._channel_type)
         data = {}
+        if meta is not None:
+            data['duration'] = meta.duration
+            data['nem_date'] = meta.nem_time.isoformat()
+            data['spot_per_kwh'] = round(meta.spot_per_kwh)
+            data['start_time'] = meta.start_time.isoformat()
+            data['end_time'] = meta.end_time.isoformat()
+            data['renewables'] = round(meta.renewables)
+            data['estimate'] = meta.estimate
+            data['spike_status'] = meta.spike_status.value
+            data['channel_type'] = meta.channel_type.value
 
-        data[ATTR_ATTRIBUTION] = ATTRIBUTION
-        now = datetime.datetime.now()
-        data[ATTR_SENSOR_ID] = self.sensor_type
-        data[ATTR_LAST_UPDATE] = now.strftime("%Y-%m-%d %H:%M:%S")
-        data[ATTR_GRID_NAME] = self.network_provider
-        data[ATTR_POSTCODE] = self.postcode
+            if meta.range is not None:
+                data['range_min'] = meta.range.min
+                data['range_max'] = meta.range.max
 
-        if (self.amber_data is not None):
-            future_pricing = []
-            data[ATTR_PRICE_FORCECAST] = future_pricing
-            for price_entry in list(filter(lambda price: price.period_type == PeriodType.FORECAST, self.amber_data.data.variable_prices_and_renewables)):
-                entry = {}
-                entry["pricing_period_type"] = str(
-                    price_entry.period_type.value)
-                entry["pricing_period"] = price_entry.period.strftime(
-                    "%Y-%m-%d %H:%M:%S")
-                entry["renewable_percentage"] = round(
-                    float(price_entry.renewables_percentage), 2)
-                if(self.sensor_type == CONST_GENRALUSE):
-                    entry["price"] = self.calc_amber_price(self.amber_data.data.static_prices.e1.totalfixed_kwh_price,
-                                                           self.amber_data.data.static_prices.e1.loss_factor, price_entry.wholesale_kwh_price)
-                if(self.sensor_type == CONST_SOLARFIT):
-                    entry["price"] = abs(self.calc_amber_price(self.amber_data.data.static_prices.b1.totalfixed_kwh_price,
-                                                               self.amber_data.data.static_prices.b1.loss_factor, price_entry.wholesale_kwh_price))
-                future_pricing.append(entry)
-
+        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
         return data
 
-    def calc_amber_price(self, fixed_price, loss_factor, variable_price):
-        return round(
-            float(fixed_price)
-            + float(loss_factor)
-            * float(variable_price),
-            2,
-        )
 
-    @ property
+class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
+        super().__init__(data_service.coordinator)
+        self._platform_name = platform_name
+        self._data_service = data_service
+
+    @property
+    def name(self) -> Union[str, None]:
+        return self._platform_name + " - Renewables"
+
+    @property
+    def icon(self):
+        return "mdi:solar-power"
+
+    @property
     def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return UNIT_NAME
+        return "%"
 
-    @ Throttle(SCAN_INTERVAL)
-    def update(self):
-        """Get the Amber Electric data from the REST API"""
-        params = {"postcode": self.postcode}
-        if self.network_name != None:
-            params["networkName"] = self.network_name
+    @property
+    def state(self) -> Union[str, None]:
+        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
+        if channel:
+            return round(channel.renewables, 0)
 
-        response = requests.post(URL, json.dumps(params))
-        _LOGGER.debug(response.text)
-        response_json = json.loads(response.text)
-        # When searching by network name, the postcode will come back empty, so fill it in from the config.
-        # This is easier than making it optional in the model
-        if response_json["data"]["postcode"] == "":
-            response_json["data"]["postcode"] = self.postcode
+    @property
+    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
+        data = {}
+        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
+        return data
 
-        self.amber_data = AmberData.from_dict(response_json)
 
-        if self.amber_data is not None:
-            self.price_updated_datetime = self.amber_data.data.variable_prices_and_renewables[
-                0
-            ].created_at
-            self.network_provider = self.amber_data.data.network_provider
+class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
+        super().__init__(data_service.coordinator)
+        self._platform_name = platform_name
+        self._data_service = data_service
+
+    @property
+    def name(self) -> Union[str, None]:
+        return self._platform_name + " - Price Spike"
+
+    @property
+    def state(self) -> Union[str, None]:
+        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
+        if channel is not None:
+            return channel.spike_status == SpikeStatus.SPIKE
+        return False
+
+    @property
+    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
+        data = {}
+        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
+        return data
+
+
+class AmberFactory():
+    def __init__(self, hass: HomeAssistant, platform_name: str, site_id: str, api: amber_api.AmberApi):
+        self._platform_name = platform_name
+        self.data_service = AmberDataService(hass, api, site_id)
+
+    def build_sensors(self) -> List[SensorEntity]:
+        sensors = []
+        if self.data_service.site is not None:
+            sensors.append(AmberPriceSensor(
+                self._platform_name, ChannelType.GENERAL, self.data_service))
+
+            if len(list(filter(lambda channel: channel.type == ChannelType.FEED_IN, self.data_service.site.channels))) > 0:
+                sensors.append(AmberPriceSensor(
+                    self._platform_name, ChannelType.FEED_IN, self.data_service))
+
+            if len(list(filter(lambda channel: channel.type == ChannelType.CONTROLLED_LOAD, self.data_service.site.channels))) > 0:
+                sensors.append(AmberPriceSensor(
+                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
+
+            sensors.append(AmberRenewablesSensor(
+                self._platform_name, self.data_service))
+
+            sensors.append(AmberPriceSpikeSensor(
+                self._platform_name, self.data_service))
+        return sensors
+
+
+def setup_platform(hass: HomeAssistant, config, add_entities, discovery_info=None):
+    return True
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    configuration = amberelectric.Configuration(
+        access_token=entry.data.get(CONF_API_TOKEN)
+    )
+
+    api_instance = amber_api.AmberApi.create(configuration)
+    # Do a sites enquiry, and get all the channels...
+    factory = AmberFactory(
+        hass, entry.title, entry.data.get(CONF_SITE_ID), api_instance)
+    factory.data_service.async_setup()
+    await factory.data_service.coordinator.async_refresh()
+    async_add_entities(factory.build_sensors())

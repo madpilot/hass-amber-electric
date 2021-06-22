@@ -1,6 +1,13 @@
 {
-  "domain": "amberelectric",
-  "name": "Amber Electric",
-  "documentation": "https://www.home-assistant.io/integrations/bom",
-  "codeowners": ["@lewisbenge"]
+    "domain": "amberelectric",
+    "name": "Amber Electric",
+    "config_flow": true,
+    "documentation": "https://www.home-assistant.io/integrations/amberelectric",
+    "codeowners": [
+        "@madpilot"
+    ],
+    "requirements": [
+        "https://github.com/madpilot/amberelectric.py/archive/main.zip#amberelectric==1.0.0"
+    ],
+    "version": "1.0.0"
 }
