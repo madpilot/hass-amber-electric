@@ -65,6 +65,7 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
         data = {}
         if meta is not None:
             data['duration'] = meta.duration
+            data['date'] = meta.date.isoformat()
             data['nem_date'] = meta.nem_time.isoformat()
             data['spot_per_kwh'] = round(meta.spot_per_kwh)
             data['start_time'] = meta.start_time.isoformat()
@@ -154,6 +155,7 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
             for meta in forecasts:
                 datum = {}
                 datum['duration'] = meta.duration
+                data['date'] = meta.date.isoformat()
                 datum['nem_date'] = meta.nem_time.isoformat()
                 datum['spot_per_kwh'] = round(meta.spot_per_kwh)
                 datum['start_time'] = meta.start_time.isoformat()
