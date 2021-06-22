@@ -66,7 +66,7 @@ class AmberDataService:
 
     @property
     def update_interval(self) -> timedelta:
-        timedelta(minutes=1)
+        return timedelta(minutes=1)
 
     def update(self) -> None:
         self.current_prices = {
