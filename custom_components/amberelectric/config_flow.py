@@ -8,8 +8,6 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, callback
-# from homeassistant.data_entry_flow import FlowResult
-from homeassistant.util import slugify
 
 import amberelectric
 from amberelectric.api import amber_api

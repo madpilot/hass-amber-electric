@@ -2,7 +2,7 @@ from typing import List, Union
 from amberelectric.model.channel import ChannelType
 from amberelectric.model.site import Site
 from homeassistant.core import HomeAssistant, callback
-import amberelectric
+from amberelectric import ApiException
 from amberelectric.api import amber_api
 from amberelectric.model.actual_interval import ActualInterval
 from amberelectric.model.current_interval import CurrentInterval
@@ -10,12 +10,16 @@ from amberelectric.model.forecast_interval import ForecastInterval
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from .const import LOGGER
 
 
 def is_current(interval: Union[ActualInterval, CurrentInterval, ForecastInterval]) -> bool:
     return interval.__class__ == CurrentInterval
+
+
+def is_forecast(interval: Union[ActualInterval, CurrentInterval, ForecastInterval]) -> bool:
+    return interval.__class__ == ForecastInterval
 
 
 def is_general(interval: Union[ActualInterval, CurrentInterval, ForecastInterval]) -> bool:
@@ -54,6 +58,12 @@ class AmberDataService:
             ChannelType.FEED_IN: None
         }
 
+        self.forecasts: dict[str, Union[List[ForecastInterval], None]] = {
+            ChannelType.GENERAL: None,
+            ChannelType.CONTROLLED_LOAD: None,
+            ChannelType.FEED_IN: None
+        }
+
     @callback
     def async_setup(self) -> None:
         self.coordinator = DataUpdateCoordinator(
@@ -69,7 +79,13 @@ class AmberDataService:
         return timedelta(minutes=1)
 
     def update(self) -> None:
-        self.current_prices = {
+        self.current_prices: dict[str, Union[CurrentInterval, None]] = {
+            ChannelType.GENERAL: None,
+            ChannelType.CONTROLLED_LOAD: None,
+            ChannelType.FEED_IN: None
+        }
+
+        self.forecasts: dict[str, Union[List[ForecastInterval], None]] = {
             ChannelType.GENERAL: None,
             ChannelType.CONTROLLED_LOAD: None,
             ChannelType.FEED_IN: None
@@ -81,8 +97,16 @@ class AmberDataService:
             if len(sites) > 0:
                 self.site = sites[0]
 
-            self.data = self._api.get_prices(self._site_id)
+            start_date = (datetime.today() -
+                          timedelta(hours=12, minutes=0)).date()
+            end_date = (datetime.today() +
+                        timedelta(hours=12, minutes=0)).date()
+
+            self.data = self._api.get_prices(
+                self._site_id, start_date=start_date, end_date=end_date)
+
             current = list(filter(is_current, self.data))
+            forecasts = list(filter(is_forecast, self.data))
 
             self.current_prices[ChannelType.GENERAL] = first(
                 list(filter(is_general, current)))
@@ -93,9 +117,16 @@ class AmberDataService:
             self.current_prices[ChannelType.FEED_IN] = first(
                 list(filter(is_feed_in, current)))
 
+            self.forecasts[ChannelType.GENERAL] = list(
+                filter(is_general, forecasts))[0:23]
+            self.forecasts[ChannelType.CONTROLLED_LOAD] = list(
+                filter(is_controlled_load, forecasts))[0:23]
+            self.forecasts[ChannelType.FEED_IN] = list(
+                filter(is_feed_in, forecasts))[0:23]
+
             LOGGER.debug("Fetched new Amber data: %s", self.data)
 
-        except amberelectric.ApiException as e:
+        except ApiException as e:
             raise UpdateFailed("Missing price data, skipping update") from e
 
     async def async_update_data(self) -> None:

@@ -16,6 +16,8 @@ from .coordinator import AmberDataService
 from .const import CONF_API_TOKEN, CONF_SITE_ID
 from homeassistant.const import ATTR_ATTRIBUTION
 
+ATTRIBUTION = "Data provided by the Amber Electric pricing API"
+
 
 def friendly_channel_type(channel_type: str) -> str:
     if channel_type == ChannelType.GENERAL:
@@ -76,7 +78,7 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
                 data['range_min'] = meta.range.min
                 data['range_max'] = meta.range.max
 
-        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
+        data[ATTR_ATTRIBUTION] = ATTRIBUTION
         return data
 
 
@@ -107,7 +109,65 @@ class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
         data = {}
-        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
+        data[ATTR_ATTRIBUTION] = ATTRIBUTION
+        return data
+
+
+class AmberForecastSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
+        super().__init__(data_service.coordinator)
+        self._channel_type = channel_type
+        self._platform_name = platform_name
+        self._data_service = data_service
+
+    @property
+    def name(self) -> Union[str, None]:
+        return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Forecast"
+
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        if self._channel_type == ChannelType.FEED_IN:
+            return "mdi:solar-power"
+        return "mdi:transmission-tower"
+
+    @property
+    def unit_of_measurement(self):
+        return "¢/kWh"
+
+    @property
+    def state(self) -> Union[str, None]:
+        forecasts = self._data_service.forecasts.get(self._channel_type)
+        if forecasts and len(forecasts) > 0:
+            if self._channel_type == ChannelType.FEED_IN:
+                return round(forecasts[0].per_kwh, 0) * -1
+            return round(forecasts[0].per_kwh, 0)
+
+    @property
+    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
+        forecasts = self._data_service.forecasts.get(self._channel_type)
+        data = {}
+        data['forecasts'] = []
+        data['channel_type'] = self._channel_type.value
+
+        if forecasts is not None:
+            for meta in forecasts:
+                datum = {}
+                datum['duration'] = meta.duration
+                datum['nem_date'] = meta.nem_time.isoformat()
+                datum['spot_per_kwh'] = round(meta.spot_per_kwh)
+                datum['start_time'] = meta.start_time.isoformat()
+                datum['end_time'] = meta.end_time.isoformat()
+                datum['renewables'] = round(meta.renewables)
+                datum['spike_status'] = meta.spike_status.value
+
+                if meta.range is not None:
+                    datum['range_min'] = meta.range.min
+                    datum['range_max'] = meta.range.max
+
+                data['forecasts'].append(datum)
+
+        data[ATTR_ATTRIBUTION] = ATTRIBUTION
         return data
 
 
@@ -131,7 +191,7 @@ class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
         data = {}
-        data[ATTR_ATTRIBUTION] = "Data provided by the Amber Electric pricing API"
+        data[ATTR_ATTRIBUTION] = ATTRIBUTION
         return data
 
 
@@ -146,12 +206,21 @@ class AmberFactory():
             sensors.append(AmberPriceSensor(
                 self._platform_name, ChannelType.GENERAL, self.data_service))
 
+            sensors.append(AmberForecastSensor(
+                self._platform_name, ChannelType.GENERAL, self.data_service))
+
             if len(list(filter(lambda channel: channel.type == ChannelType.FEED_IN, self.data_service.site.channels))) > 0:
                 sensors.append(AmberPriceSensor(
                     self._platform_name, ChannelType.FEED_IN, self.data_service))
 
+                sensors.append(AmberForecastSensor(
+                    self._platform_name, ChannelType.FEED_IN, self.data_service))
+
             if len(list(filter(lambda channel: channel.type == ChannelType.CONTROLLED_LOAD, self.data_service.site.channels))) > 0:
                 sensors.append(AmberPriceSensor(
+                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
+
+                sensors.append(AmberForecastSensor(
                     self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
 
             sensors.append(AmberRenewablesSensor(
