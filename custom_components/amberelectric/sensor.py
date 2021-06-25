@@ -13,7 +13,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import AmberDataService
 
-from .const import CONF_API_TOKEN, CONF_SITE_ID
+from .const import CONF_API_TOKEN, CONF_SITE_ID, LOGGER
 from homeassistant.const import ATTR_ATTRIBUTION
 
 ATTRIBUTION = "Data provided by the Amber Electric pricing API"
@@ -248,6 +248,10 @@ class AmberFactory():
 
             sensors.append(AmberPriceSpikeSensor(
                 self._platform_name, self.data_service))
+
+            LOGGER.debug("Adding " + str(len(sensors)) + " sensors")
+        else:
+            LOGGER.error("No site found!")
         return sensors
 
 
@@ -266,8 +270,13 @@ async def async_setup_entry(
 
     api_instance = amber_api.AmberApi.create(configuration)
     # Do a sites enquiry, and get all the channels...
+    LOGGER.debug("Initializing AmberFactory...")
     factory = AmberFactory(
         hass, entry.title, entry.data.get(CONF_SITE_ID), api_instance)
+    LOGGER.debug("AmberFactory initialized. Setting up...")
     factory.data_service.async_setup()
+    LOGGER.debug("AmberFactory Setup. Trigging manual fetch...")
     await factory.data_service.coordinator.async_refresh()
+    LOGGER.debug("Fetch complete. Adding entities...")
     async_add_entities(factory.build_sensors())
+    LOGGER.debug("Entry setup complete.")
