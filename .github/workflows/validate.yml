@@ -1,0 +1,59 @@
+name: Validate
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  validate-hassfest:
+    runs-on: ubuntu-latest
+    name: With hassfest
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: Hassfest validation
+      uses: "home-assistant/actions/hassfest@master"
+
+  validate-hacs:
+    runs-on: ubuntu-latest
+    name: With HACS Action
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: HACS validation
+      uses: hacs/action@main
+      with:
+        category: integration
+        comment: false
+
+  validate-homeassistant:
+    name: With Home Assistant
+    strategy:
+      matrix:
+        channel: [stable, beta, dev]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout the repository
+        uses: actions/checkout@v2
+
+      - name: 📋 Copy sample configuration for Home Assistant
+        run: |
+          mkdir ./test_configuration
+          cp -f .devcontainer/sample_configuration.yaml ./test_configuration/configuration.yaml
+          cp -r ./custom_components ./test_configuration
+          sed -i 's/#//g' ./test_configuration/configuration.yaml
+
+      - name: 👷 Setup Home Assistant
+        id: homeassistant
+        uses: ludeeus/setup-homeassistant@main
+        with:
+          tag: ${{ matrix.channel }}
+          config-dir: test_configuration
