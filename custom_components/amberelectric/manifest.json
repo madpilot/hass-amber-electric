@@ -3,6 +3,7 @@
     "name": "Amber Electric",
     "config_flow": true,
     "documentation": "https://www.home-assistant.io/integrations/amberelectric",
+    "issue_tracker": "https://github.com/madpilot/hass-amber-electric/issues",
     "codeowners": [
         "@madpilot"
     ],

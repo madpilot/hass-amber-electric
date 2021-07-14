@@ -1,0 +1,11 @@
+{
+    "name": "Amber Electric",
+    "country": "AU",
+    "domains": [
+        "sensor"
+    ],
+    "homeassistant": "2021.7.1",
+    "iot_class": [
+        "Cloud Polling"
+    ]
+}

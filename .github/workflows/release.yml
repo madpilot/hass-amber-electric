@@ -1,0 +1,43 @@
+
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release_zip_file:
+    name: Prepare release asset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Get version
+        id: version
+        uses: home-assistant/actions/helpers/version@master
+
+      - name: "Set version number"
+        run: |
+          sed -i '/INTEGRATION_VERSION = /c\INTEGRATION_VERSION = "${{ steps.version.outputs.version }}"' ${{ github.workspace }}/custom_components/amberelectric/const.py
+          python3 ${{ github.workspace }}/manage/update_manifest.py --version ${{ steps.version.outputs.version }}
+
+      # Pack the Amber Electric dir as a zip and upload to the release
+      - name: ZIP Amber Electric Dir
+        run: |
+          cd ${{ github.workspace }}/custom_components/amberelectric
+          zip amberelectric.zip -r ./
+      - name: Upload zip to release
+        uses: svenstaro/upload-release-action@v1-release
+
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ github.workspace }}/custom_components/amberelectric/amberelectric.zip
+          asset_name: amberelectric.zip
+          tag: ${{ github.ref }}
+          overwrite: true
