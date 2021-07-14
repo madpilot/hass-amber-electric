@@ -92,22 +92,24 @@ class AmberElectricConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         api_token = self._api_token
         if user_input is not None:
-            site_id = user_input[CONF_SITE_ID]
-            sites = list(filter(lambda site: site.id == site_id, self._sites))
+            site_nmi = user_input[CONF_SITE_NMI]
+            sites = list(
+                filter(lambda site: site.nmi == site_nmi, self._sites))
 
             if len(sites) != 0:
                 site: Site = sites[0]
+                site_id = site.id
                 name = user_input.get(CONF_SITE_NAME, site_id)
                 return self.async_create_entry(title=name, data={CONF_SITE_ID: site_id, CONF_API_TOKEN: api_token, CONF_SITE_NMI: site.nmi})
         else:
             user_input = {CONF_API_TOKEN: api_token,
-                          CONF_SITE_ID: "", CONF_SITE_NAME: ""}
+                          CONF_SITE_NMI: "", CONF_SITE_NAME: ""}
 
         return self.async_show_form(
             step_id="site",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_SITE_ID, default=user_input[CONF_SITE_ID]): vol.In(list(map(lambda site: site.id, self._sites))),
+                    vol.Required(CONF_SITE_NMI, default=user_input[CONF_SITE_NMI]): vol.In(list(map(lambda site: site.nmi, self._sites))),
                     vol.Optional(CONF_SITE_NAME, default=user_input[CONF_SITE_NAME]): str
                 }
             ),

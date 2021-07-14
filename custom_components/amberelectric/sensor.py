@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import AmberDataService
+from homeassistant.util import slugify
 
 from .const import CONF_API_TOKEN, CONF_SITE_ID, LOGGER
 from homeassistant.const import ATTR_ATTRIBUTION
@@ -30,8 +31,9 @@ def friendly_channel_type(channel_type: str) -> str:
 
 
 class AmberPriceSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
+    def __init__(self, platform_name: str, site_id: str, channel_type: str, data_service: AmberDataService) -> None:
         super().__init__(data_service.coordinator)
+        self._site_id = site_id
         self._channel_type = channel_type
         self._platform_name = platform_name
         self._data_service = data_service
@@ -39,6 +41,10 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self) -> Union[str, None]:
         return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Price"
+
+    @property
+    def unique_id(self) -> Union[str, None]:
+        return slugify(self._site_id + " " + friendly_channel_type(self._channel_type) + " Price")
 
     @property
     def icon(self):
@@ -87,14 +93,19 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
 
 
 class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
+    def __init__(self, platform_name: str, site_id: str, data_service: AmberDataService) -> None:
         super().__init__(data_service.coordinator)
+        self._site_id = site_id
         self._platform_name = platform_name
         self._data_service = data_service
 
     @property
     def name(self) -> Union[str, None]:
         return self._platform_name + " - Renewables"
+
+    @property
+    def unique_id(self) -> Union[str, None]:
+        return slugify(self._site_id + " Renewables")
 
     @property
     def icon(self):
@@ -118,8 +129,9 @@ class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
 
 
 class AmberForecastSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
+    def __init__(self, platform_name: str, site_id: str, channel_type: str, data_service: AmberDataService) -> None:
         super().__init__(data_service.coordinator)
+        self._site_id = site_id
         self._channel_type = channel_type
         self._platform_name = platform_name
         self._data_service = data_service
@@ -127,6 +139,10 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def name(self) -> Union[str, None]:
         return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Forecast"
+
+    @property
+    def unique_id(self) -> Union[str, None]:
+        return slugify(self._site_id + " " + friendly_channel_type(self._channel_type) + " Forecast")
 
     @property
     def icon(self):
@@ -179,14 +195,19 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
 
 
 class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
+    def __init__(self, platform_name: str, site_id: str, data_service: AmberDataService) -> None:
         super().__init__(data_service.coordinator)
         self._platform_name = platform_name
+        self._site_id = site_id
         self._data_service = data_service
 
     @property
     def name(self) -> Union[str, None]:
         return self._platform_name + " - Price Spike"
+
+    @property
+    def unique_id(self) -> Union[str, None]:
+        return slugify(self._site_id + " Price Spike")
 
     @property
     def state(self) -> Union[str, None]:
@@ -219,35 +240,36 @@ class AmberFactory():
     def __init__(self, hass: HomeAssistant, platform_name: str, site_id: str, api: amber_api.AmberApi):
         self._platform_name = platform_name
         self.data_service = AmberDataService(hass, api, site_id)
+        self._site_id = site_id
 
     def build_sensors(self) -> List[SensorEntity]:
         sensors = []
         if self.data_service.site is not None:
             sensors.append(AmberPriceSensor(
-                self._platform_name, ChannelType.GENERAL, self.data_service))
+                self._platform_name, self._site_id, ChannelType.GENERAL, self.data_service))
 
             sensors.append(AmberForecastSensor(
-                self._platform_name, ChannelType.GENERAL, self.data_service))
+                self._platform_name, self._site_id, ChannelType.GENERAL, self.data_service))
 
             if len(list(filter(lambda channel: channel.type == ChannelType.FEED_IN, self.data_service.site.channels))) > 0:
                 sensors.append(AmberPriceSensor(
-                    self._platform_name, ChannelType.FEED_IN, self.data_service))
+                    self._platform_name, self._site_id, ChannelType.FEED_IN, self.data_service))
 
                 sensors.append(AmberForecastSensor(
-                    self._platform_name, ChannelType.FEED_IN, self.data_service))
+                    self._platform_name, self._site_id, ChannelType.FEED_IN, self.data_service))
 
             if len(list(filter(lambda channel: channel.type == ChannelType.CONTROLLED_LOAD, self.data_service.site.channels))) > 0:
                 sensors.append(AmberPriceSensor(
-                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
+                    self._platform_name, self._site_id, ChannelType.CONTROLLED_LOAD, self.data_service))
 
                 sensors.append(AmberForecastSensor(
-                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
+                    self._platform_name, self._site_id, ChannelType.CONTROLLED_LOAD, self.data_service))
 
             sensors.append(AmberRenewablesSensor(
-                self._platform_name, self.data_service))
+                self._platform_name, self._site_id, self.data_service))
 
             sensors.append(AmberPriceSpikeSensor(
-                self._platform_name, self.data_service))
+                self._platform_name, self._site_id, self.data_service))
 
             LOGGER.debug("Adding " + str(len(sensors)) + " sensors")
         else:
