@@ -14,7 +14,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import AmberDataService
 
-from .const import CONF_API_TOKEN, CONF_SITE_ID, LOGGER, DOMAIN
+from .const import CONF_API_TOKEN, CONF_SITE_ID, LOGGER
 from homeassistant.const import ATTR_ATTRIBUTION
 
 ATTRIBUTION = "Data provided by the Amber Electric pricing API"
@@ -44,7 +44,7 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the unique id of the device"""
-        return "%s_%s_%s_%s" % (DOMAIN, self._platform_name, self._channel_type, "Price")
+        return "%s_%s_%s" % (self._platform_name, self._channel_type, "Price")
 
     @property
     def icon(self):
@@ -105,7 +105,7 @@ class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the unique id of the device"""
-        return "%s_%s_%s" % (DOMAIN, self._platform_name, "Renewables")
+        return "%s_%s" % (self._platform_name, "Renewables")
 
     @property
     def icon(self):
@@ -142,7 +142,7 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the unique id of the device"""
-        return "%s_%s_%s_%s" % (DOMAIN, self._platform_name, self._channel_type, "Forecast")
+        return "%s_%s_%s" % (self._platform_name, self._channel_type, "Forecast")
 
     @property
     def icon(self):
@@ -207,7 +207,7 @@ class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self):
         """Return the unique id of the device"""
-        return "%s_%s_%s" % (DOMAIN, self._platform_name, "PriceSpike")        
+        return "%s_%s" % (self._platform_name, "PriceSpike")        
 
     @property
     def state(self) -> Union[str, None]:
