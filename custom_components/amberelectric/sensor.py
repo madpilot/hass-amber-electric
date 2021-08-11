@@ -9,7 +9,7 @@ from amberelectric.model.current_interval import CurrentInterval
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, DEVICE_CLASS_MONETARY
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .coordinator import AmberDataService
 from homeassistant.util import slugify
@@ -90,6 +90,48 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
 
         data[ATTR_ATTRIBUTION] = ATTRIBUTION
         return data
+
+
+class AmberEnergyPriceSensor(CoordinatorEntity, SensorEntity):
+    def __init__(self, platform_name: str, site_id: str, channel_type: str, data_service: AmberDataService) -> None:
+        super().__init__(data_service.coordinator)
+        self._site_id = site_id
+        self._channel_type = channel_type
+        self._platform_name = platform_name
+        self._data_service = data_service
+
+    @property
+    def name(self) -> Union[str, None]:
+        return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Energy Price"
+
+    @property
+    def unique_id(self) -> Union[str, None]:
+        return slugify(self._site_id + " " + friendly_channel_type(self._channel_type) + " Energy Price")
+
+    @property
+    def icon(self):
+        """Return the icon of the sensor."""
+        if self._channel_type == ChannelType.FEED_IN:
+            return "mdi:solar-power"
+        if self._channel_type == ChannelType.CONTROLLED_LOAD:
+            return "mdi:clock-outline"
+        return "mdi:transmission-tower"
+
+    @property
+    def device_class(self) -> Union[str, None]:
+        return DEVICE_CLASS_MONETARY
+
+    @property
+    def unit_of_measurement(self) -> Union[str, None]:
+        return "AUD"
+
+    @property
+    def state(self) -> Union[str, None]:
+        channel = self._data_service.current_prices.get(self._channel_type)
+        if channel:
+            if self._channel_type == ChannelType.FEED_IN:
+                return round(channel.per_kwh, 0) / 100 * -1
+            return round(channel.per_kwh, 0) / 100
 
 
 class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
@@ -248,6 +290,9 @@ class AmberFactory():
             sensors.append(AmberPriceSensor(
                 self._platform_name, self._site_id, ChannelType.GENERAL, self.data_service))
 
+            sensors.append(AmberEnergyPriceSensor(
+                self._platform_name, self._site_id, ChannelType.GENERAL, self.data_service))
+
             sensors.append(AmberForecastSensor(
                 self._platform_name, self._site_id, ChannelType.GENERAL, self.data_service))
 
@@ -255,11 +300,17 @@ class AmberFactory():
                 sensors.append(AmberPriceSensor(
                     self._platform_name, self._site_id, ChannelType.FEED_IN, self.data_service))
 
+                sensors.append(AmberEnergyPriceSensor(
+                    self._platform_name, self._site_id, ChannelType.FEED_IN, self.data_service))
+
                 sensors.append(AmberForecastSensor(
                     self._platform_name, self._site_id, ChannelType.FEED_IN, self.data_service))
 
             if len(list(filter(lambda channel: channel.type == ChannelType.CONTROLLED_LOAD, self.data_service.site.channels))) > 0:
                 sensors.append(AmberPriceSensor(
+                    self._platform_name, self._site_id, ChannelType.CONTROLLED_LOAD, self.data_service))
+
+                sensors.append(AmberEnergyPriceSensor(
                     self._platform_name, self._site_id, ChannelType.CONTROLLED_LOAD, self.data_service))
 
                 sensors.append(AmberForecastSensor(
