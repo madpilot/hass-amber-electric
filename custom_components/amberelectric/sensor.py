@@ -75,6 +75,8 @@ class AmberPriceSensor(CoordinatorEntity, SensorEntity):
             data['duration'] = meta.duration
             data['date'] = meta.date.isoformat()
             data['per_kwh'] = round(meta.per_kwh)
+            if self._channel_type == ChannelType.FEED_IN:
+                data['per_kwh'] = data['per_kwh'] * -1
             data['nem_date'] = meta.nem_time.isoformat()
             data['spot_per_kwh'] = round(meta.spot_per_kwh)
             data['start_time'] = meta.start_time.isoformat()
@@ -220,6 +222,10 @@ class AmberForecastSensor(CoordinatorEntity, SensorEntity):
                 data['date'] = meta.date.isoformat()
                 datum['nem_date'] = meta.nem_time.isoformat()
                 datum['per_kwh'] = round(meta.per_kwh)
+
+                if self._channel_type == ChannelType.FEED_IN:
+                    datum['per_kwh'] = datum['per_kwh'] * -1
+
                 datum['spot_per_kwh'] = round(meta.spot_per_kwh)
                 datum['start_time'] = meta.start_time.isoformat()
                 datum['end_time'] = meta.end_time.isoformat()
