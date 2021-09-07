@@ -125,7 +125,7 @@ class AmberEnergyPriceSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def unit_of_measurement(self) -> Union[str, None]:
-        return "AUD"
+        return "AUD/kWh"
 
     @property
     def state(self) -> Union[str, None]:
