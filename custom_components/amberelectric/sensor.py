@@ -1,262 +1,187 @@
-# import amberelectric
-from typing import Any, List, Mapping, Union
+"""Amber Electric Sensor definitions."""
+
+# There are three types of sensor: Current, Forecast and Grid
+# Current and forecast will create general, controlled load and feed in as required
+# At the moment renewables in the only grid sensor.
+
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
 from amberelectric.model.channel import ChannelType
-
-from amberelectric.model.interval import SpikeStatus
-import amberelectric
-from amberelectric.api import amber_api
 from amberelectric.model.current_interval import CurrentInterval
-from homeassistant.core import HomeAssistant
+from amberelectric.model.forecast_interval import ForecastInterval
+
+from homeassistant.components.sensor import (
+    STATE_CLASS_MEASUREMENT,
+    SensorEntity,
+    SensorEntityDescription,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_ATTRIBUTION, CURRENCY_DOLLAR, ENERGY_KILO_WATT_HOUR
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .coordinator import AmberDataService
 
-from .const import CONF_API_TOKEN, CONF_SITE_ID, LOGGER
-from homeassistant.const import ATTR_ATTRIBUTION
+from .const import ATTRIBUTION, DOMAIN
+from .coordinator import AmberUpdateCoordinator
 
-ATTRIBUTION = "Data provided by the Amber Electric pricing API"
+ICONS = {
+    "general": "mdi:transmission-tower",
+    "controlled_load": "mdi:clock-outline",
+    "feed_in": "mdi:solar-power",
+}
+
+UNIT = f"{CURRENCY_DOLLAR}/{ENERGY_KILO_WATT_HOUR}"
 
 
 def friendly_channel_type(channel_type: str) -> str:
-    if channel_type == ChannelType.GENERAL:
-        return "General"
-    if channel_type == ChannelType.CONTROLLED_LOAD:
+    """Return a human readable version of the channel type."""
+    if channel_type == "controlled_load":
         return "Controlled Load"
-    if channel_type == ChannelType.FEED_IN:
+    if channel_type == "feed_in":
         return "Feed In"
-    return channel_type
+    return "General"
 
 
-class AmberPriceSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
-        super().__init__(data_service.coordinator)
-        self._channel_type = channel_type
-        self._platform_name = platform_name
-        self._data_service = data_service
+class AmberSensor(CoordinatorEntity, SensorEntity):
+    """Amber Base Sensor."""
 
-    @property
-    def name(self) -> Union[str, None]:
-        return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Price"
+    def __init__(
+        self,
+        coordinator: AmberUpdateCoordinator,
+        description: SensorEntityDescription,
+        channel_type: ChannelType,
+    ) -> None:
+        """Initialize the Sensor."""
+        super().__init__(coordinator)
+        self.site_id = coordinator.site_id
+        self.entity_description = description
+        self.channel_type = channel_type
 
-    @property
-    def icon(self):
-        """Return the icon of the sensor."""
-        if self._channel_type == ChannelType.FEED_IN:
-            return "mdi:solar-power"
-        if self._channel_type == ChannelType.CONTROLLED_LOAD:
-            return "mdi:clock-outline"
-        return "mdi:transmission-tower"
+        self._attr_unique_id = (
+            f"{self.site_id}-{self.entity_description.key}-{self.channel_type}"
+        )
 
-    @property
-    def unit_of_measurement(self):
-        return "¢/kWh"
 
-    @property
-    def state(self) -> Union[str, None]:
-        channel = self._data_service.current_prices.get(self._channel_type)
-        if channel:
-            if self._channel_type == ChannelType.FEED_IN:
-                return round(channel.per_kwh, 0) * -1
-            return round(channel.per_kwh, 0)
+class AmberPriceSensor(AmberSensor):
+    """Amber Price Sensor."""
 
     @property
-    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
-        meta = self._data_service.current_prices.get(self._channel_type)
-        data = {}
-        if meta is not None:
-            data['duration'] = meta.duration
-            data['date'] = meta.date.isoformat()
-            data['per_kwh'] = round(meta.per_kwh)
-            data['nem_date'] = meta.nem_time.isoformat()
-            data['spot_per_kwh'] = round(meta.spot_per_kwh)
-            data['start_time'] = meta.start_time.isoformat()
-            data['end_time'] = meta.end_time.isoformat()
-            data['renewables'] = round(meta.renewables)
-            data['estimate'] = meta.estimate
-            data['spike_status'] = meta.spike_status.value
-            data['channel_type'] = meta.channel_type.value
+    def native_value(self) -> str | None:
+        """Return the current price in $/kWh."""
+        interval = self.coordinator.data[self.entity_description.key][self.channel_type]
 
-            if meta.range is not None:
-                data['range_min'] = meta.range.min
-                data['range_max'] = meta.range.max
+        if interval.channel_type == ChannelType.FEED_IN:
+            return round(interval.per_kwh, 0) / 100 * -1
+        return round(interval.per_kwh, 0) / 100
 
-        data[ATTR_ATTRIBUTION] = ATTRIBUTION
+    @property
+    def device_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return additional pieces of information about the price."""
+        interval = self.coordinator.data[self.entity_description.key][self.channel_type]
+
+        data: dict[str, Any] = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        if interval is None:
+            return data
+
+        data["duration"] = interval.duration
+        data["date"] = interval.date.isoformat()
+        data["per_kwh"] = round(interval.per_kwh)
+        if interval.channel_type == ChannelType.FEED_IN:
+            data["per_kwh"] = data["per_kwh"] * -1
+        data["nem_date"] = interval.nem_time.isoformat()
+        data["spot_per_kwh"] = round(interval.spot_per_kwh)
+        data["start_time"] = interval.start_time.isoformat()
+        data["end_time"] = interval.end_time.isoformat()
+        data["renewables"] = round(interval.renewables)
+        data["estimate"] = interval.estimate
+        data["spike_status"] = interval.spike_status.value
+        data["channel_type"] = interval.channel_type.value
+
+        if interval.range is not None:
+            data["range_min"] = interval.range.min
+            data["range_max"] = interval.range.max
+
         return data
 
 
-class AmberRenewablesSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
-        super().__init__(data_service.coordinator)
-        self._platform_name = platform_name
-        self._data_service = data_service
+class AmberForecastSensor(AmberSensor):
+    """Amber Forecast Sensor."""
 
     @property
-    def name(self) -> Union[str, None]:
-        return self._platform_name + " - Renewables"
+    def native_value(self) -> str | None:
+        """Return the first forecast price in $/kWh."""
+        intervals = self.coordinator.data[self.entity_description.key].get(
+            self.channel_type
+        )
+        if intervals:
+            interval = intervals[0]
+
+            if interval.channel_type == ChannelType.FEED_IN:
+                return round(interval.per_kwh, 0) / 100 * -1
+            return round(interval.per_kwh, 0) / 100
+        return None
 
     @property
-    def icon(self):
-        return "mdi:solar-power"
+    def device_state_attributes(self) -> Mapping[str, Any] | None:
+        """Return additional pieces of information about the price."""
+        intervals = self.coordinator.data[self.entity_description.key].get(
+            self.channel_type
+        )
 
-    @property
-    def unit_of_measurement(self):
-        return "%"
+        if intervals:
+            data = {
+                "forecasts": [],
+                "channel_type": intervals[0].channel_type.value,
+                ATTR_ATTRIBUTION: ATTRIBUTION,
+            }
 
-    @property
-    def state(self) -> Union[str, None]:
-        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
-        if channel:
-            return round(channel.renewables, 0)
-
-    @property
-    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
-        data = {}
-        data[ATTR_ATTRIBUTION] = ATTRIBUTION
-        return data
-
-
-class AmberForecastSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, channel_type: str, data_service: AmberDataService) -> None:
-        super().__init__(data_service.coordinator)
-        self._channel_type = channel_type
-        self._platform_name = platform_name
-        self._data_service = data_service
-
-    @property
-    def name(self) -> Union[str, None]:
-        return self._platform_name + " - " + friendly_channel_type(self._channel_type) + " " + " Forecast"
-
-    @property
-    def icon(self):
-        if self._channel_type == ChannelType.FEED_IN:
-            return "mdi:solar-power"
-        if self._channel_type == ChannelType.CONTROLLED_LOAD:
-            return "mdi:clock-outline"
-        return "mdi:transmission-tower"
-
-    @property
-    def unit_of_measurement(self):
-        return "¢/kWh"
-
-    @property
-    def state(self) -> Union[str, None]:
-        forecasts = self._data_service.forecasts.get(self._channel_type)
-        if forecasts and len(forecasts) > 0:
-            if self._channel_type == ChannelType.FEED_IN:
-                return round(forecasts[0].per_kwh, 0) * -1
-            return round(forecasts[0].per_kwh, 0)
-
-    @property
-    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
-        forecasts = self._data_service.forecasts.get(self._channel_type)
-        data = {}
-        data['forecasts'] = []
-        data['channel_type'] = self._channel_type.value
-
-        if forecasts is not None:
-            for meta in forecasts:
+            for interval in intervals:
                 datum = {}
-                datum['duration'] = meta.duration
-                data['date'] = meta.date.isoformat()
-                datum['nem_date'] = meta.nem_time.isoformat()
-                datum['per_kwh'] = round(meta.per_kwh)
-                datum['spot_per_kwh'] = round(meta.spot_per_kwh)
-                datum['start_time'] = meta.start_time.isoformat()
-                datum['end_time'] = meta.end_time.isoformat()
-                datum['renewables'] = round(meta.renewables)
-                datum['spike_status'] = meta.spike_status.value
+                datum["duration"] = interval.duration
+                datum["date"] = interval.date.isoformat()
+                datum["nem_date"] = interval.nem_time.isoformat()
+                datum["per_kwh"] = round(interval.per_kwh)
+                if interval.channel_type == ChannelType.FEED_IN:
+                    datum["per_kwh"] = datum["per_kwh"] * -1
+                datum["spot_per_kwh"] = round(interval.spot_per_kwh)
+                datum["start_time"] = interval.start_time.isoformat()
+                datum["end_time"] = interval.end_time.isoformat()
+                datum["renewables"] = round(interval.renewables)
+                datum["spike_status"] = interval.spike_status.value
 
-                if meta.range is not None:
-                    datum['range_min'] = meta.range.min
-                    datum['range_max'] = meta.range.max
+                if interval.range is not None:
+                    datum["range_min"] = interval.range.min
+                    datum["range_max"] = interval.range.max
 
-                data['forecasts'].append(datum)
+                data["forecasts"].append(datum)
 
-        data[ATTR_ATTRIBUTION] = ATTRIBUTION
-        return data
+            return data
+        return None
 
 
-class AmberPriceSpikeSensor(CoordinatorEntity, SensorEntity):
-    def __init__(self, platform_name: str, data_service: AmberDataService) -> None:
-        super().__init__(data_service.coordinator)
-        self._platform_name = platform_name
-        self._data_service = data_service
+class AmberGridSensor(CoordinatorEntity, SensorEntity):
+    """Sensor to show single grid specific values."""
 
-    @property
-    def name(self) -> Union[str, None]:
-        return self._platform_name + " - Price Spike"
-
-    @property
-    def state(self) -> Union[str, None]:
-        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
-        if channel is not None:
-            return channel.spike_status == SpikeStatus.SPIKE
-        return False
-
-    @property
-    def icon(self):
-        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
-        if channel is not None:
-            if channel.spike_status == SpikeStatus.SPIKE:
-                return "mdi:power-plug-off"
-            if channel.spike_status == SpikeStatus.POTENTIAL:
-                return "mdi:power-plug-outline"
-        return "mdi:power-plug"
+    def __init__(
+        self,
+        coordinator: AmberUpdateCoordinator,
+        description: SensorEntityDescription,
+    ) -> None:
+        """Initialize the Sensor."""
+        super().__init__(coordinator)
+        self.site_id = coordinator.site_id
+        self.entity_description = description
+        self._attr_device_state_attributes = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        self._attr_unique_id = f"{coordinator.site_id}-{description.key}"
 
     @property
-    def device_state_attributes(self) -> Union[Mapping[str, Any], None]:
-        data = {}
-        channel = self._data_service.current_prices.get(ChannelType.GENERAL)
-        if channel is not None:
-            data['spike_status'] = channel.spike_status.value
-        data[ATTR_ATTRIBUTION] = ATTRIBUTION
-        return data
-
-
-class AmberFactory():
-    def __init__(self, hass: HomeAssistant, platform_name: str, site_id: str, api: amber_api.AmberApi):
-        self._platform_name = platform_name
-        self.data_service = AmberDataService(hass, api, site_id)
-
-    def build_sensors(self) -> List[SensorEntity]:
-        sensors = []
-        if self.data_service.site is not None:
-            sensors.append(AmberPriceSensor(
-                self._platform_name, ChannelType.GENERAL, self.data_service))
-
-            sensors.append(AmberForecastSensor(
-                self._platform_name, ChannelType.GENERAL, self.data_service))
-
-            if len(list(filter(lambda channel: channel.type == ChannelType.FEED_IN, self.data_service.site.channels))) > 0:
-                sensors.append(AmberPriceSensor(
-                    self._platform_name, ChannelType.FEED_IN, self.data_service))
-
-                sensors.append(AmberForecastSensor(
-                    self._platform_name, ChannelType.FEED_IN, self.data_service))
-
-            if len(list(filter(lambda channel: channel.type == ChannelType.CONTROLLED_LOAD, self.data_service.site.channels))) > 0:
-                sensors.append(AmberPriceSensor(
-                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
-
-                sensors.append(AmberForecastSensor(
-                    self._platform_name, ChannelType.CONTROLLED_LOAD, self.data_service))
-
-            sensors.append(AmberRenewablesSensor(
-                self._platform_name, self.data_service))
-
-            sensors.append(AmberPriceSpikeSensor(
-                self._platform_name, self.data_service))
-
-            LOGGER.debug("Adding " + str(len(sensors)) + " sensors")
-        else:
-            LOGGER.error("No site found!")
-        return sensors
-
-
-def setup_platform(hass: HomeAssistant, config, add_entities, discovery_info=None):
-    return True
+    def native_value(self) -> str | None:
+        """Return the value of the sensor."""
+        return self.coordinator.data["grid"][self.entity_description.key]
 
 
 async def async_setup_entry(
@@ -264,19 +189,40 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    configuration = amberelectric.Configuration(
-        access_token=entry.data.get(CONF_API_TOKEN)
-    )
+    """Set up a config entry."""
+    coordinator: AmberUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    api_instance = amber_api.AmberApi.create(configuration)
-    # Do a sites enquiry, and get all the channels...
-    LOGGER.debug("Initializing AmberFactory...")
-    factory = AmberFactory(
-        hass, entry.title, entry.data.get(CONF_SITE_ID), api_instance)
-    LOGGER.debug("AmberFactory initialized. Setting up...")
-    factory.data_service.async_setup()
-    LOGGER.debug("AmberFactory Setup. Trigging manual fetch...")
-    await factory.data_service.coordinator.async_refresh()
-    LOGGER.debug("Fetch complete. Adding entities...")
-    async_add_entities(factory.build_sensors())
-    LOGGER.debug("Entry setup complete.")
+    current: dict[str, CurrentInterval] = coordinator.data["current"]
+    forecasts: dict[str, list[ForecastInterval]] = coordinator.data["forecasts"]
+
+    entities: list = []
+    for channel_type in current:
+        description = SensorEntityDescription(
+            key="current",
+            name=f"{entry.title} - {friendly_channel_type(channel_type)} Price",
+            native_unit_of_measurement=UNIT,
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon=ICONS[channel_type],
+        )
+        entities.append(AmberPriceSensor(coordinator, description, channel_type))
+
+    for channel_type in forecasts:
+        description = SensorEntityDescription(
+            key="forecasts",
+            name=f"{entry.title} - {friendly_channel_type(channel_type)} Forecast",
+            native_unit_of_measurement=UNIT,
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon=ICONS[channel_type],
+        )
+        entities.append(AmberForecastSensor(coordinator, description, channel_type))
+
+    renewables_description = SensorEntityDescription(
+        key="renewables",
+        name=f"{entry.title} - Renewables",
+        native_unit_of_measurement="%",
+        state_class=STATE_CLASS_MEASUREMENT,
+        icon="mdi:solar-power",
+    )
+    entities.append(AmberGridSensor(coordinator, renewables_description))
+
+    async_add_entities(entities)
