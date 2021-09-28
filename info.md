@@ -4,12 +4,20 @@
 
 ### Breaking Changes
 
+  {% if version_installed.replace("v", "").replace(".","") | int < 2  %}
+- Energy integration removed.
+- Price sensor now in $/kWh not c/kWh
+  {% endif %}
+
 ### Changes
 
 ### Features
 
   {% if version_installed.replace("v", "").replace(".","") | int < 1  %}
 - Initial deployment
+  {% endif %}
+  {% if version_installed.replace("v", "").replace(".","") | int < 2  %}
+- Backport official core integration.
   {% endif %}
 
 ### Bugfixes
