@@ -3,11 +3,16 @@
     "name": "Amber Electric",
     "config_flow": true,
     "documentation": "https://www.home-assistant.io/integrations/amberelectric",
+    "issue_tracker": "https://github.com/madpilot/hass-amber-electric/issues",
     "codeowners": [
         "@madpilot"
     ],
     "requirements": [
+<<<<<<< HEAD
         "amberelectric.py==1.0.3"
+=======
+        "amberelectric==1.0.0"
+>>>>>>> 4a904bb0a46fb0e1620c93bfb9003989deba6ea8
     ],
     "version": "2.0.0",
     "iot_class": "cloud_polling"

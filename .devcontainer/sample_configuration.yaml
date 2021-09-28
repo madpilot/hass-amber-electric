@@ -1,0 +1,10 @@
+---
+default_config:
+logger:
+  default: info
+  logs:
+    amberelectric: debug
+    custom_components.amberelectric: debug
+frontend:
+  themes: !include_dir_merge_named themes
+amberelectric:

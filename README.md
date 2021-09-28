@@ -23,8 +23,11 @@ If you have automations based on the price, you can either divide the thresholds
 
 # How to install
 
-1. Copy custom_components/amberelectric to your hass data directory (where your configuration.yaml lives). It should go into the same directory structure (`YOUR_CONFIG_DIRECTORY/custom_components/amberelectric`)
-2. Go to https://app.amber.com.au/developers and generate an API token
-3. Go to the integrations page inside your home assistant install
-4. Search for Amber Electric
-5. Install, enter your API key, select the site you want to add.
+1. Install [HACS](https://hacs.xyz/docs/installation/installation/)
+2. Within HA go to HACS > Integrations > ... (in top right corner) > Custom Repositories
+3. Add URL: `https://github.com/madpilot/hass-amber-electric`, Category: `Integration`
+4. Scroll down to the Amber integration and upgrade/install the latest version
+5. Go to https://app.amber.com.au/developers and generate an API token
+6. Go to the integrations page inside your home assistant install
+7. Search for Amber Electric
+8. Install, enter your API key, select the site you want to add.
