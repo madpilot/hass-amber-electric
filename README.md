@@ -1,6 +1,6 @@
 # Home Assistant Plugin for Amber Electric Real-Time Pricing
 
-A custom component for Home Assistant (www.home-assistant.io) to pull the latest energy prices from the Amber Electric (https://www.amberelectric.com.au/) REST API based on Post Code.
+A custom component for Home Assistant (www.home-assistant.io) to pull the latest energy prices from the Amber Electric (https://www.amber.com.au/) REST API based
 
 ## Attention!
 
