@@ -4,7 +4,9 @@ A custom component for Home Assistant (www.home-assistant.io) to pull the latest
 
 ## Attention!
 
-This component has now been accepted into the Home Assistant core, and will be available from October 13, 2021. After this date, it is **not recommended to install this custom component**.
+This component is now in Home Assistant core **it is not recommended to install this custom component**.
+
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=amberelectric)
 
 I have back ported the code from core here, so if you upgrade to the latest version of this custom component it will reflect the new integration in core.
 
